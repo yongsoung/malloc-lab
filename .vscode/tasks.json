@@ -1,0 +1,24 @@
+{
+    "tasks": [
+      {
+        "type": "process",
+        "label": "before run debug",
+        "command": "/usr/bin/make",
+        "group": {
+          "kind": "build"
+        },
+        "dependsOn": ["before run clean"]
+      },
+      {
+        "type": "process",
+        "label": "before run clean",
+        "command": "/usr/bin/make",
+        "args": ["clean"],
+        "group": {
+          "kind": "build"
+        }
+      }
+    ],
+    "version": "2.0.0"
+  }
+  

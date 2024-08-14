@@ -66,6 +66,13 @@ team_t team = {
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) // 그 전 블록의 bp위치로 이동.(이전 블록 footer로 이동하면 그 전 블록의 사이즈를 알 수 있으니 그만큼 그 전으로 이동.)
 static char *heap_listp;                                                // 처음에 쓸 큰 가용블록 힙을 만들어줌.
 
+static void *extend_heap(size_t words);
+static void *coalesce(void *bp);
+static void *find_fit(size_t asize);
+static void place(void *bp, size_t asize);
+void mm_free(void *bp);
+void *mm_realloc(void *bp, size_t size);
+
 /*
  * mm_init - initialize the malloc package.
  */
@@ -91,15 +98,14 @@ static void *extend_heap(size_t words)
     size_t size;
 
     size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
-    (long)(bp = mem_sbrk(size));
-    if (bp == -1)
+    if ((long)(bp = mem_sbrk(size)) == -1)
     {
         return NULL;
     }
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
-    return coalese(bp);
+    return coalesce(bp);
 }
 
 static void *coalesce(void *bp)
@@ -132,6 +138,7 @@ static void *coalesce(void *bp)
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
+    return bp;
 }
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
@@ -155,24 +162,22 @@ void *mm_malloc(size_t size)
     {
         asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
     }
-    (bp = find_fit(asize));
-    if ( bp != NULL)
+    if ((bp = find_fit(asize)) != NULL)
     {
         place(bp, asize);
         return bp;
     }
+
     extendsize = MAX(asize, CHUNKSIZE);
-    (bp = extend_heap(extendsize / WSIZE));
-    if ( bp == NULL)
+    if ((bp = extend_heap(extendsize / WSIZE)) == NULL)
     {
         return NULL;
     }
     place(bp, asize);
     return bp;
-    
 }
 
-static void find_fit(size_t asize)
+static void *find_fit(size_t asize)
 {
     void *bp;
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
@@ -188,33 +193,58 @@ static void find_fit(size_t asize)
 static void place(void *bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp));
-    if ((csize -))
+    if ((csize - asize) >= (2 * DSIZE))
+    {
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        bp = NEXT_BLKP(bp);
+        PUT(HDRP(bp), PACK(csize - asize, 0));
+        PUT(FTRP(bp), PACK(csize - asize, 0));
+    }
+    else
+    {
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+    }
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
+    coalesce(bp);
 }
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
-void *mm_realloc(void *ptr, size_t size)
-{
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-        return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-        copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
+void *mm_realloc(void *bp, size_t size)
+{
+    if (size <= 0)
+    {
+        mm_free(bp);
+        return 0;
+    }
+    if (bp == NULL)
+    {
+        return mm_malloc(size);
+    }
+    void *newp = mm_malloc(size);
+    if (newp == NULL)
+    {
+        return 0;
+    }
+    size_t oldsize = GET_SIZE(HDRP(bp));
+    if (size < oldsize)
+    {
+        oldsize = size;
+    }
+    memcpy(newp, bp, oldsize);
+    mm_free(bp);
+    return newp;
 }
